@@ -65,7 +65,6 @@ def init_database():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Tabela de análises (histórico)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS analises (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +75,6 @@ def init_database():
         )
     ''')
     
-    # Tabela para salvar dados dos prints
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS dados_prints (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,7 +127,6 @@ def deletar_analise(analise_id):
     conn.close()
 
 def carregar_analise_por_id(analise_id):
-    """Carrega uma análise específica pelo ID"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -149,35 +146,24 @@ def carregar_analise_por_id(analise_id):
         }
     return None
 
-def salvar_dados_print(nome_arquivo, dados_json):
-    """Salva os dados extraídos de um print"""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO dados_prints (nome_arquivo, dados_json) VALUES (?, ?)",
-        (nome_arquivo, dados_json)
-    )
-    conn.commit()
-    conn.close()
-
-def listar_dados_salvos():
-    """Lista todos os dados de prints salvos"""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT nome_arquivo, data_salvamento FROM dados_prints ORDER BY data_salvamento DESC LIMIT 10"
-    )
-    resultados = cursor.fetchall()
-    conn.close()
-    
-    result = []
-    for r in resultados:
-        result.append((r[0], r[1]))
-    return result
-
 # ============================================
-# FUNÇÃO PARA DIAS ÚTEIS (AUTOMÁTICA)
+# FUNÇÕES CORRIGIDAS (TICKET MÉDIO)
 # ============================================
+
+def calcular_ticket_medio(vendedor):
+    """Calcula o ticket médio do vendedor baseado no faturamento e quantidade de vendas"""
+    qtd_faturadas = vendedor['qtd_faturadas']
+    if qtd_faturadas > 0:
+        # Faturamento estimado baseado no valor médio por venda
+        # Em um cenário real, isso viria do print de faturamento
+        faturamento_estimado = qtd_faturadas * 1000
+        return round(faturamento_estimado / qtd_faturadas, 2)
+    return 0
+
+def calcular_faturamento_estimado(vendedor):
+    """Calcula faturamento estimado baseado no ticket médio"""
+    ticket = calcular_ticket_medio(vendedor)
+    return vendedor['qtd_faturadas'] * ticket
 
 def calcular_dias_uteis():
     """Calcula dias úteis totais do mês e dias úteis passados até hoje"""
@@ -185,7 +171,6 @@ def calcular_dias_uteis():
     ano = hoje.year
     mes = hoje.month
     
-    # Próximo mês para calcular último dia
     if mes == 12:
         proximo_mes = date(ano + 1, 1, 1)
     else:
@@ -193,14 +178,12 @@ def calcular_dias_uteis():
     
     ultimo_dia = (proximo_mes - timedelta(days=1)).day
     
-    # Conta dias úteis totais do mês
     dias_uteis_total = 0
     for dia in range(1, ultimo_dia + 1):
         data = date(ano, mes, dia)
-        if data.weekday() < 5:  # Segunda=0 a Sexta=4
+        if data.weekday() < 5:
             dias_uteis_total += 1
     
-    # Conta dias úteis passados até hoje
     dias_uteis_passados = 0
     for dia in range(1, hoje.day + 1):
         data = date(ano, mes, dia)
@@ -209,20 +192,7 @@ def calcular_dias_uteis():
     
     return dias_uteis_total, dias_uteis_passados
 
-# ============================================
-# FUNÇÕES DE PROJEÇÃO
-# ============================================
-
-def calcular_ticket_medio(vendedor):
-    """Calcula o ticket médio corretamente"""
-    qtd_faturadas = vendedor['qtd_faturadas']
-    if qtd_faturadas > 0:
-        faturamento_estimado = qtd_faturadas * 1000
-        return round(faturamento_estimado / qtd_faturadas, 2)
-    return 0
-
 def calcular_projecao_completa(vendedor, dias_uteis_passados, dias_uteis_total):
-    """Calcula projeção completa baseada no desempenho atual"""
     qtd_faturadas_atual = vendedor['qtd_faturadas']
     interacoes_atual = vendedor['interacoes']
     ticket_medio = calcular_ticket_medio(vendedor)
@@ -320,6 +290,32 @@ def serializar_analise(vendedores, periodo):
 
 def desserializar_analise(dados_json):
     return json.loads(dados_json)
+
+def salvar_dados_print(nome_arquivo, dados_json):
+    """Salva os dados extraídos de um print"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO dados_prints (nome_arquivo, dados_json) VALUES (?, ?)",
+        (nome_arquivo, dados_json)
+    )
+    conn.commit()
+    conn.close()
+
+def listar_dados_salvos():
+    """Lista todos os dados de prints salvos"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT nome_arquivo, data_salvamento FROM dados_prints ORDER BY data_salvamento DESC LIMIT 10"
+    )
+    resultados = cursor.fetchall()
+    conn.close()
+    
+    result = []
+    for r in resultados:
+        result.append((r[0], r[1]))
+    return result
 
 # ============================================
 # LISTA DE VENDEDORES
@@ -606,12 +602,10 @@ def editar_dados_manual(vendedores):
     return vendedores_editados
 
 # ============================================
-# FUNÇÃO PARA EXIBIR HISTÓRICO E CARREGAR ANÁLISES
+# FUNÇÃO PARA EXIBIR HISTÓRICO
 # ============================================
 
 def exibir_historico_e_carregar():
-    """Exibe o histórico de análises e permite carregar uma análise específica"""
-    
     st.markdown("### 📚 Histórico de Análises Salvas")
     st.markdown("Selecione uma análise abaixo para carregar os dados:")
     
@@ -621,12 +615,10 @@ def exibir_historico_e_carregar():
         st.info("📭 Nenhuma análise salva ainda. Faça sua primeira análise na aba 'Nova Análise'.")
         return None
     
-    # Criar dataframe para exibir
     df_historico = pd.DataFrame(analises)
     df_historico['data_analise'] = pd.to_datetime(df_historico['data_analise']).dt.strftime('%d/%m/%Y %H:%M')
     df_historico['total_bonus'] = df_historico['total_bonus'].apply(lambda x: f'R$ {x:,.2f}')
     
-    # Seleção da análise
     opcoes = {}
     for a in analises:
         label = f"{a['periodo']} - {a['data_analise'][:16]} - Bônus: R$ {a['total_bonus']:,.2f}"
@@ -636,7 +628,7 @@ def exibir_historico_e_carregar():
     
     col1, col2 = st.columns([1, 4])
     with col1:
-        if st.button("📂 Carregar Análise Selecionada", type="primary", use_container_width=True):
+        if st.button("📂 Carregar Análise", type="primary", use_container_width=True):
             analise_id = opcoes[selecionado]
             analise = carregar_analise_por_id(analise_id)
             if analise:
@@ -651,26 +643,21 @@ def exibir_historico_e_carregar():
                 st.rerun()
     
     with col2:
-        if st.button("🗑️ Deletar Selecionada", use_container_width=True):
+        if st.button("🗑️ Deletar", use_container_width=True):
             analise_id = opcoes[selecionado]
             deletar_analise(analise_id)
             st.success("✅ Análise deletada!")
             st.rerun()
     
-    # Mostrar tabela do histórico
     st.markdown("---")
     st.markdown("### 📊 Tabela de Histórico")
     st.dataframe(df_historico[['periodo', 'data_analise', 'total_bonus']], use_container_width=True, hide_index=True)
-    
-    return None
 
 # ============================================
-# AGENTE DE PERFORMANCE COMERCIAL
+# AGENTE DE PERFORMANCE
 # ============================================
 
 def agente_performance_comercial(vendedores, stats, periodo, projecoes=None):
-    """Agente especializado em análise de performance comercial"""
-    
     contexto = f"""
     Você é um Agente de Performance Comercial especialista em vendas B2B.
     
@@ -686,9 +673,9 @@ def agente_performance_comercial(vendedores, stats, periodo, projecoes=None):
     """
     
     for v in vendedores:
-        ticket_medio = calcular_ticket_medio(v)
+        ticket = calcular_ticket_medio(v)
         contexto += f"""
-        {v['nome']}: Margem {v['margem_pct']:.1f}% | Conversão {v['conversao_calculada']:.1f}% | Bônus R$ {v['bonus_total']:,.0f} | Ticket: R$ {ticket_medio:,.2f}
+        {v['nome']}: Margem {v['margem_pct']:.1f}% | Conversão {v['conversao_calculada']:.1f}% | Bônus R$ {v['bonus_total']:,.0f} | Ticket R$ {ticket:,.2f}
         """
     
     if "agente_history" not in st.session_state:
@@ -711,15 +698,9 @@ Olá! Analisei os dados do período **{periodo}**.
         if msg["role"] == "user":
             st.markdown(f'<div style="background: #1a4a2e; color: white; padding: 10px; border-radius: 10px; margin: 5px 0; text-align: right;">👤 <b>Você:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<div style="background: #141824; color: #c8d0dc; padding: 12px; border-radius: 10px; margin: 5px 0; border-left: 3px solid #ffab00;">🤖 <b>Agente de Performance:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="background: #141824; color: #c8d0dc; padding: 12px; border-radius: 10px; margin: 5px 0; border-left: 3px solid #ffab00;">🤖 <b>Agente:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
     
-    sugestoes = [
-        "Análise completa do time",
-        "Quem são os top performers?",
-        "Oportunidades de melhoria",
-        "Projeção para próximo mês",
-        "Plano de ação para equipe"
-    ]
+    sugestoes = ["Análise completa do time", "Quem são os top performers?", "Oportunidades de melhoria", "Projeção para próximo mês"]
     
     st.markdown("**💡 Perguntas sugeridas:**")
     cols = st.columns(2)
@@ -731,27 +712,24 @@ Olá! Analisei os dados do período **{periodo}**.
     
     st.markdown("---")
     
-    pergunta = st.text_area("💬 Faça sua pergunta comercial:", key="agente_input", height=80)
+    pergunta = st.text_area("💬 Faça sua pergunta:", key="agente_input", height=80)
     
-    if st.button("📤 Enviar para Agente", type="primary", use_container_width=True) and pergunta:
+    if st.button("📤 Enviar", type="primary", use_container_width=True) and pergunta:
         st.session_state.agente_history.append({"role": "user", "content": pergunta})
         
-        with st.spinner("🏢 Agente de Performance analisando..."):
+        with st.spinner("Analisando..."):
             try:
                 modelo = get_modelo_disponivel()
                 if modelo:
                     prompt = f"""
-                    Você é um Agente de Performance Comercial sênior.
+                    Você é um Agente de Performance Comercial.
                     
-                    Contexto dos dados:
-                    {contexto}
+                    Contexto: {contexto}
                     
                     Pergunta: {pergunta}
                     
-                    Responda como um consultor comercial especialista. Seja prático, objetivo e traga insights acionáveis.
-                    Responda em português do Brasil.
+                    Responda em português do Brasil, seja prático e objetivo.
                     """
-                    
                     resposta = modelo.generate_content(prompt)
                     st.session_state.agente_history.append({"role": "assistant", "content": resposta.text})
                     st.rerun()
@@ -763,132 +741,10 @@ Olá! Analisei os dados do período **{periodo}**.
         st.rerun()
 
 # ============================================
-# FUNÇÃO DE PROJEÇÃO COMPLETA
-# ============================================
-
-def exibir_projecao_completa(vendedores, stats, periodo):
-    """Exibe a aba de projeção de resultados"""
-    
-    st.markdown("### 📈 Projeção de Resultados")
-    st.markdown("""
-    <div class="info-box">
-    📊 <strong>Projeção de Metas</strong><br>
-    Esta ferramenta projeta o resultado final do mês baseado no desempenho atual.
-    </div>
-    """, unsafe_allow_html=True)
-    
-    dias_uteis_total, dias_uteis_passados = calcular_dias_uteis()
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="card-metrica">
-            <div class="indicador-titulo">📅 TOTAL DIAS ÚTEIS</div>
-            <div class="valor-grande">{dias_uteis_total}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="card-metrica">
-            <div class="indicador-titulo">✅ DIAS TRABALHADOS</div>
-            <div class="valor-medio">{dias_uteis_passados}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-        <div class="card-metrica">
-            <div class="indicador-titulo">⏳ DIAS RESTANTES</div>
-            <div class="valor-medio">{dias_uteis_total - dias_uteis_passados}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    vendedor_selecionado = st.selectbox(
-        "Selecione o vendedor para projeção:",
-        [v['nome'] for v in vendedores]
-    )
-    
-    vendedor = next((v for v in vendedores if v['nome'] == vendedor_selecionado), None)
-    
-    if vendedor:
-        proj = calcular_projecao_completa(vendedor, dias_uteis_passados, dias_uteis_total)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">📦 FATURADAS</div>
-                <div class="valor-grande">{proj['qtd_faturadas_atual']:.0f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">💰 TICKET MÉDIO</div>
-                <div class="valor-grande">R$ {proj['ticket_medio']:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">💵 FATURAMENTO</div>
-                <div class="valor-medio">R$ {proj['faturamento_atual']:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">🔄 CONVERSÃO</div>
-                <div class="valor-medio">{proj['conversao_atual']:.1f}%</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("---")
-        st.markdown("### 📈 PROJEÇÃO PARA FIM DO MÊS")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">📦 PROJEÇÃO FATURADAS</div>
-                <div class="valor-grande">{proj['projecao_faturas']:.0f}</div>
-                <div class="progresso-bar"><div class="progresso-fill" style="width: {min(100, proj['percentual_meta_faturas'])}%"></div></div>
-                <div class="indicador-meta">{proj['percentual_meta_faturas']:.1f}% da meta</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="card-metrica" style="border-color: {proj['cor']}">
-                <div class="indicador-titulo">🎯 STATUS</div>
-                <div class="valor-grande" style="color: {proj['cor']}">{proj['percentual_meta_faturas']:.1f}%</div>
-                <div class="indicador-meta">{proj['status']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown(f"""
-        <div class="info-box" style="border-left-color: {proj['cor']}">
-        <strong>💡 RECOMENDAÇÃO:</strong><br>
-        {proj['recomendacao']}
-        </div>
-        """, unsafe_allow_html=True)
-
-# ============================================
-# FEEDBACK STAR COMPLETO
+# FEEDBACK STAR
 # ============================================
 
 def exibir_feedback_star_completo(vendedores, stats, periodo):
-    """Feedback STAR com análise de todos os indicadores"""
-    
     st.markdown("### 🎯 Feedback Individual - Metodologia STAR")
     
     vendedor_selecionado = st.selectbox(
@@ -904,60 +760,18 @@ def exibir_feedback_star_completo(vendedores, stats, periodo):
         faturamento = vendedor['qtd_faturadas'] * ticket_medio
         
         col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">💰 FATURAMENTO</div>
-                <div class="valor-medio">R$ {faturamento:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">🎫 TICKET MÉDIO</div>
-                <div class="valor-medio">R$ {ticket_medio:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">📦 QTD NFs</div>
-                <div class="valor-medio">{vendedor['qtd_faturadas']:.0f}</div>
-            </div>
-            """, unsafe_allow_html=True)
+        col1.metric("💰 FATURAMENTO", f"R$ {faturamento:,.2f}")
+        col2.metric("🎫 TICKET MÉDIO", f"R$ {ticket_medio:,.2f}")
+        col3.metric("📦 QTD NFs", f"{vendedor['qtd_faturadas']:.0f}")
         
         col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">📈 MARGEM</div>
-                <div class="valor-medio">{vendedor['margem_pct']:.1f}%</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">🎯 ALCANCE</div>
-                <div class="valor-medio">{vendedor['alcance_projetado_pct']:.1f}%</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="card-metrica">
-                <div class="indicador-titulo">💰 BÔNUS</div>
-                <div class="valor-medio">R$ {vendedor['bonus_total']:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
+        col1.metric("📈 MARGEM", f"{vendedor['margem_pct']:.1f}%")
+        col2.metric("🎯 ALCANCE", f"{vendedor['alcance_projetado_pct']:.1f}%")
+        col3.metric("💰 BÔNUS", f"R$ {vendedor['bonus_total']:,.2f}")
         
         st.markdown("---")
         
-        if st.button(f"🎯 Gerar Feedback STAR para {vendedor['nome']}", type="primary", use_container_width=True):
+        if st.button(f"🎯 Gerar Feedback STAR", type="primary", use_container_width=True):
             with st.spinner("Gerando feedback..."):
                 try:
                     modelo = get_modelo_disponivel()
@@ -968,22 +782,56 @@ def exibir_feedback_star_completo(vendedores, stats, periodo):
                         DADOS:
                         - Faturamento: R$ {faturamento:,.2f}
                         - Ticket Médio: R$ {ticket_medio:,.2f}
-                        - Qtd NFs: {vendedor['qtd_faturadas']:.0f}
-                        - Margem: {vendedor['margem_pct']:.1f}% (Meta 26%)
-                        - Alcance: {vendedor['alcance_projetado_pct']:.1f}% (Necessário 90%)
-                        - Conversão: {vendedor['conversao_calculada']:.1f}% (Meta 12%)
-                        - Prazo: {vendedor['prazo_medio']:.0f} dias (Meta ≤43)
-                        - TME: {vendedor['tme_minutos']:.1f} min (Meta ≤5)
-                        - Interações: {vendedor['interacoes']:.0f} (Meta ≥200)
+                        - Margem: {vendedor['margem_pct']:.1f}%
+                        - Alcance: {vendedor['alcance_projetado_pct']:.1f}%
+                        - Conversão: {vendedor['conversao_calculada']:.1f}%
+                        - Prazo: {vendedor['prazo_medio']:.0f} dias
+                        - TME: {vendedor['tme_minutos']:.1f} min
                         - Bônus: R$ {vendedor['bonus_total']:,.2f}
                         
                         Use STAR: Situação, Tarefa, Ação, Resultado.
-                        Responda em português.
                         """
                         resposta = modelo.generate_content(prompt)
                         st.markdown(f'<div style="background: #1a1f2e; border-radius: 12px; padding: 20px; margin-top: 16px;">{resposta.text}</div>', unsafe_allow_html=True)
                 except Exception as e:
                     st.error(f"Erro: {e}")
+
+# ============================================
+# PROJEÇÃO
+# ============================================
+
+def exibir_projecao_completa(vendedores, stats, periodo):
+    st.markdown("### 📈 Projeção de Resultados")
+    
+    dias_uteis_total, dias_uteis_passados = calcular_dias_uteis()
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("📅 DIAS ÚTEIS", dias_uteis_total)
+    col2.metric("✅ DIAS TRABALHADOS", dias_uteis_passados)
+    col3.metric("⏳ DIAS RESTANTES", dias_uteis_total - dias_uteis_passados)
+    
+    st.markdown("---")
+    
+    vendedor_selecionado = st.selectbox("Selecione o vendedor:", [v['nome'] for v in vendedores])
+    vendedor = next((v for v in vendedores if v['nome'] == vendedor_selecionado), None)
+    
+    if vendedor:
+        proj = calcular_projecao_completa(vendedor, dias_uteis_passados, dias_uteis_total)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("📦 FATURADAS", f"{proj['qtd_faturadas_atual']:.0f}")
+        col2.metric("💰 TICKET MÉDIO", f"R$ {proj['ticket_medio']:,.2f}")
+        col3.metric("💵 FATURAMENTO", f"R$ {proj['faturamento_atual']:,.2f}")
+        col4.metric("🔄 CONVERSÃO", f"{proj['conversao_atual']:.1f}%")
+        
+        st.markdown("---")
+        st.markdown("### 📈 PROJEÇÃO")
+        
+        col1, col2 = st.columns(2)
+        col1.metric("📦 PROJEÇÃO FATURADAS", f"{proj['projecao_faturas']:.0f}", f"{proj['percentual_meta_faturas']:.1f}% da meta")
+        col2.metric("🎯 STATUS", proj['status'])
+        
+        st.info(f"💡 {proj['recomendacao']}")
 
 # ============================================
 # CSS PERSONALIZADO
@@ -1120,10 +968,8 @@ def tela_login():
     
     with col2:
         st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        
         st.markdown('<h3 style="text-align:center; color:#00e676;">🔐 Acesso Restrito</h3>', unsafe_allow_html=True)
         st.markdown('<p style="text-align:center; color:#6b8f6b; font-size:0.8rem;">Área exclusiva para administradores</p>', unsafe_allow_html=True)
-        
         st.markdown("---")
         
         username = st.text_input("Usuário", key="login_user", placeholder="Digite seu usuário")
@@ -1140,7 +986,6 @@ def tela_login():
         
         st.markdown("---")
         st.markdown('<p style="text-align:center; color:#6b8f6b; font-size:0.7rem;">⚠️ Acesso restrito</p>', unsafe_allow_html=True)
-        
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================
@@ -1199,7 +1044,7 @@ def dashboard_principal():
     )
     
     # ============================================
-    # DASHBOARD DE BÔNUS (SIMPLIFICADO)
+    # DASHBOARD DE BÔNUS
     # ============================================
     if dashboard_tipo == "💰 Dashboard de Bônus":
         
@@ -1211,7 +1056,6 @@ def dashboard_principal():
             "🎯 5. Projeção"
         ])
         
-        # TAB 1: Nova Análise
         with tab1:
             st.markdown("### 📸 Envie os prints dos painéis")
             
@@ -1243,6 +1087,10 @@ def dashboard_principal():
                     if arquivo:
                         prints_bytes.append(arquivo.read())
                         st.success(f"✅ {nome} carregado!")
+                        try:
+                            salvar_dados_print(nome, json.dumps({"nome": nome, "data": datetime.now().isoformat()}))
+                        except:
+                            pass
             
             if prints_bytes:
                 st.markdown("---")
@@ -1275,42 +1123,104 @@ def dashboard_principal():
                             st.session_state['analise_realizada'] = True
                             
                             st.success("✅ Análise concluída!")
-                            st.dataframe(pd.DataFrame(vendedores), use_container_width=True)
+                            
+                            df_preview = pd.DataFrame(vendedores)
+                            colunas_mostrar = ['nome', 'margem_pct', 'alcance_projetado_pct', 'prazo_medio', 
+                                              'qtd_faturadas', 'chamadas', 'iniciados', 'recebidos', 
+                                              'interacoes', 'conversao_calculada', 'tme_minutos', 'bonus_total']
+                            df_preview = df_preview[[c for c in colunas_mostrar if c in df_preview.columns]]
+                            st.dataframe(df_preview, use_container_width=True)
                         else:
                             st.error("❌ Falha na análise")
             else:
                 st.info("📤 Envie os 5 prints")
         
-        # TAB 2: Dashboard
         with tab2:
             if not st.session_state.get('analise_realizada', False):
                 st.warning("⚠️ Nenhuma análise carregada")
             else:
                 analise = st.session_state.get('analise_atual', {})
                 vendedores = analise.get('vendedores', [])
+                periodo = analise.get('periodo', '')
                 stats = calcular_estatisticas_time(vendedores)
                 
-                st.dataframe(pd.DataFrame(vendedores), use_container_width=True)
+                st.markdown(f'<div class="periodo-box">📅 {periodo}</div>', unsafe_allow_html=True)
+                
+                col1, col2, col3, col4, col5 = st.columns(5)
+                col1.metric("💰 BÔNUS TOTAL", f"R$ {stats['total_bonus']:,.2f}")
+                col2.metric("🏆 ELEGÍVEIS", f"{stats['qtd_elegiveis']}/{len(vendedores)}")
+                col3.metric("📈 MÉDIA MARGEM", f"{stats['media_margem']:.1f}%")
+                col4.metric("🔄 MÉDIA CONVERSÃO", f"{stats['media_conversao']:.1f}%")
+                col5.metric("⏱️ MÉDIA TME", f"{stats['media_tme']:.1f}min")
+                
+                st.markdown("---")
+                st.markdown("### 📊 Resultados por Vendedor")
+                
+                df_plot = pd.DataFrame(vendedores)
+                df_plot = df_plot.sort_values('bonus_total', ascending=False)
+                
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=df_plot['nome'],
+                    y=df_plot['bonus_total'],
+                    text=df_plot['bonus_total'].apply(lambda x: f'R$ {x:,.0f}'),
+                    textposition='outside',
+                    marker_color=['#00e676' if b >= 400 else '#ffab00' if b >= 250 else '#ff7043' for b in df_plot['bonus_total']]
+                ))
+                fig.update_layout(title="Bônus por Vendedor", plot_bgcolor='#0d1117', paper_bgcolor='#0d1117', height=400)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.markdown("---")
+                
+                col_headers = st.columns([1.2, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7])
+                headers = ["Vendedor", "Margem%", "Alcance%", "Elegível", "Prazo", "Conversão%", "TME", "Interações", "Bônus"]
+                for i, header in enumerate(headers):
+                    col_headers[i].markdown(f"**{header}**")
+                
+                st.markdown("<hr>", unsafe_allow_html=True)
+                
+                for v in vendedores:
+                    cols = st.columns([1.2, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7])
+                    cols[0].markdown(f"**{v['nome']}**")
+                    
+                    margem_class = "meta-ok" if v['margem_pct'] >= 26 else "meta-ruim"
+                    cols[1].markdown(f'<span class="{margem_class}">{v["margem_pct"]:.1f}%</span>', unsafe_allow_html=True)
+                    cols[2].markdown(f"{v['alcance_projetado_pct']:.1f}%" if v['alcance_projetado_pct'] > 0 else "N/D")
+                    
+                    if v['elegivel_margem']:
+                        cols[3].markdown('<span class="elegivel-sim">Sim</span>', unsafe_allow_html=True)
+                    else:
+                        cols[3].markdown('<span class="elegivel-nao">Não</span>', unsafe_allow_html=True)
+                    
+                    prazo_class = "meta-ok" if v['prazo_medio'] <= 43 and v['prazo_medio'] > 0 else "meta-ruim"
+                    cols[4].markdown(f'<span class="{prazo_class}">{v["prazo_medio"]:.0f}d</span>' if v['prazo_medio'] > 0 else "N/D", unsafe_allow_html=True)
+                    
+                    conv_class = "meta-ok" if v['conversao_calculada'] >= 12 else "meta-ruim"
+                    cols[5].markdown(f'<span class="{conv_class}">{v["conversao_calculada"]:.1f}%</span>' if v['conversao_calculada'] > 0 else "N/D", unsafe_allow_html=True)
+                    
+                    tme_class = "meta-ok" if v['tme_minutos'] <= 5 and v['tme_minutos'] > 0 else "meta-ruim"
+                    cols[6].markdown(f'<span class="{tme_class}">{v["tme_minutos"]:.1f}m</span>' if v['tme_minutos'] > 0 else "N/D", unsafe_allow_html=True)
+                    
+                    cols[7].markdown(f"{v['interacoes']:.0f}")
+                    cols[8].markdown(f"**R$ {v['bonus_total']:,.0f}**")
                 
                 st.markdown(f"""
                 <div style="background:#1a2a1a; border-radius:12px; padding:16px; text-align:center; margin-top:16px;">
-                    <div>💰 TOTAL DO TIME</div>
+                    <div>TOTAL DO TIME</div>
                     <div class="bonus-total">R$ {stats['total_bonus']:,.2f}</div>
                 </div>
                 """, unsafe_allow_html=True)
         
-        # TAB 3: Evolução
         with tab3:
             analises = get_analises()
             if len(analises) < 2:
-                st.info("Faça mais análises para ver evolução")
+                st.info("📊 Após realizar 2 ou mais análises, você poderá ver a evolução")
             else:
                 df = pd.DataFrame([{'periodo': a['periodo'], 'bonus': a['total_bonus']} for a in analises])
                 fig = go.Figure(go.Scatter(x=df['periodo'], y=df['bonus'], mode='lines+markers', line=dict(color='#00e676')))
                 fig.update_layout(title="Evolução do Bônus", plot_bgcolor='#0d1117', paper_bgcolor='#0d1117', height=400)
                 st.plotly_chart(fig, use_container_width=True)
         
-        # TAB 4: Edição Manual
         with tab4:
             if not st.session_state.get('analise_realizada', False):
                 st.warning("⚠️ Nenhuma análise carregada")
@@ -1321,7 +1231,7 @@ def dashboard_principal():
                 
                 vendedores_editados = editar_dados_manual(vendedores)
                 
-                if st.button("💾 Salvar", type="primary"):
+                if st.button("💾 Salvar alterações", type="primary", use_container_width=True):
                     dados_json = serializar_analise(vendedores_editados, periodo)
                     total_bonus = sum(v['bonus_total'] for v in vendedores_editados)
                     salvar_analise(periodo, dados_json, total_bonus)
@@ -1329,7 +1239,6 @@ def dashboard_principal():
                     st.success("✅ Salvo!")
                     st.rerun()
         
-        # TAB 5: Projeção
         with tab5:
             if not st.session_state.get('analise_realizada', False):
                 st.warning("⚠️ Nenhuma análise carregada")
@@ -1361,29 +1270,89 @@ def dashboard_principal():
             
             with tab_perf1:
                 st.markdown(f'<div class="periodo-box">📅 {periodo}</div>', unsafe_allow_html=True)
+                st.markdown("### 📊 Visão Geral da Performance")
                 
                 col1, col2, col3, col4 = st.columns(4)
-                col1.metric("📈 Margem Média", f"{stats['media_margem']:.1f}%")
-                col2.metric("🔄 Conversão Média", f"{stats['media_conversao']:.1f}%")
-                col3.metric("📅 Prazo Médio", f"{stats['media_prazo']:.0f} dias")
-                col4.metric("⏱️ TME Médio", f"{stats['media_tme']:.1f} min")
-            
-            with tab_perf2:
-                indicador = st.selectbox("Indicador", ["Margem (%)", "Conversão (%)", "Prazo (dias)", "TME (min)", "Interações"])
-                campo_map = {
-                    "Margem (%)": "margem_pct",
-                    "Conversão (%)": "conversao_calculada",
-                    "Prazo (dias)": "prazo_medio",
-                    "TME (min)": "tme_minutos",
-                    "Interações": "interacoes"
-                }
-                campo = campo_map[indicador]
-                df_plot = pd.DataFrame(vendedores)
-                fig = go.Figure(go.Bar(x=df_plot['nome'], y=df_plot[campo], marker_color='#00e676'))
-                fig.update_layout(title=f"{indicador} por Vendedor", plot_bgcolor='#0d1117', paper_bgcolor='#0d1117', height=400)
+                col1.metric("📈 MARGEM MÉDIA", f"{stats['media_margem']:.1f}%")
+                col2.metric("🔄 CONVERSÃO MÉDIA", f"{stats['media_conversao']:.1f}%")
+                col3.metric("📅 PRAZO MÉDIO", f"{stats['media_prazo']:.0f} dias")
+                col4.metric("⏱️ TME MÉDIO", f"{stats['media_tme']:.1f} min")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("📊 ALCANCE MÉDIO", f"{stats['media_alcance']:.1f}%")
+                col2.metric("💬 INTERAÇÕES MÉDIAS", f"{stats['media_interacoes']:.0f}")
+                col3.metric("📦 TOTAL VENDAS", f"{stats['total_faturas']:.0f}")
+                col4.metric("💰 BÔNUS TOTAL", f"R$ {stats['total_bonus']:,.2f}")
+                
+                st.markdown("---")
+                st.markdown("### 🎯 Comparativo de Metas")
+                
+                categorias = ['Margem', 'Conversão', 'Prazo (inv)', 'TME (inv)', 'Interações']
+                valores = [
+                    min(100, stats['media_margem']/26*100),
+                    min(100, stats['media_conversao']/12*100),
+                    min(100, max(0, (1 - stats['media_prazo']/43)*100)) if stats['media_prazo'] > 0 else 0,
+                    min(100, max(0, (1 - stats['media_tme']/5)*100)) if stats['media_tme'] > 0 else 0,
+                    min(100, stats['media_interacoes']/200*100)
+                ]
+                
+                fig = go.Figure()
+                fig.add_trace(go.Scatterpolar(r=valores, theta=categorias, fill='toself', name='Time', line=dict(color='#00e676')))
+                fig.add_trace(go.Scatterpolar(r=[100,100,100,100,100], theta=categorias, fill='none', name='Meta', line=dict(color='#ffab00', dash='dash')))
+                fig.update_layout(polar=dict(radialaxis=dict(range=[0,100])), height=450, plot_bgcolor='#0d1117', paper_bgcolor='#0d1117')
                 st.plotly_chart(fig, use_container_width=True)
             
+            with tab_perf2:
+                st.markdown("### 📈 Indicadores por Vendedor")
+                
+                indicador = st.selectbox("Selecione o indicador:", ["Margem (%)", "Conversão (%)", "Prazo (dias)", "TME (min)", "Interações", "Alcance (%)"])
+                
+                campo_map = {
+                    "Margem (%)": ("margem_pct", "%", 26, True),
+                    "Conversão (%)": ("conversao_calculada", "%", 12, True),
+                    "Prazo (dias)": ("prazo_medio", "dias", 43, False),
+                    "TME (min)": ("tme_minutos", "min", 5, False),
+                    "Interações": ("interacoes", "", 200, True),
+                    "Alcance (%)": ("alcance_projetado_pct", "%", 90, True)
+                }
+                
+                campo, unidade, meta, maior_melhor = campo_map[indicador]
+                
+                df_indicador = pd.DataFrame(vendedores)
+                df_indicador = df_indicador.sort_values(campo, ascending=not maior_melhor)
+                
+                cores = []
+                for _, v in df_indicador.iterrows():
+                    valor = v[campo] or 0
+                    if maior_melhor:
+                        atingiu = valor >= meta
+                    else:
+                        atingiu = valor <= meta and valor > 0
+                    cores.append('#00e676' if atingiu else '#ff5252')
+                
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=df_indicador['nome'],
+                    y=df_indicador[campo],
+                    text=df_indicador[campo].apply(lambda x: f'{x:.1f}{unidade}' if x > 0 else 'N/D'),
+                    textposition='outside',
+                    marker_color=cores
+                ))
+                fig.add_hline(y=meta, line_dash="dash", line_color="#ffab00", annotation_text=f"Meta: {meta}{unidade}")
+                fig.update_layout(title=f"{indicador} por Vendedor", plot_bgcolor='#0d1117', paper_bgcolor='#0d1117', height=450)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.markdown("---")
+                st.dataframe(df_indicador[['nome', campo]], use_container_width=True)
+            
             with tab_perf3:
+                st.markdown("### 🏢 Agente de Performance Comercial")
+                st.markdown("""
+                <div class="info-box">
+                💼 <strong>Agente Especializado em Performance Comercial</strong><br>
+                Analisa dados de vendas, sugere estratégias e identifica oportunidades.
+                </div>
+                """, unsafe_allow_html=True)
                 agente_performance_comercial(vendedores, stats, periodo, None)
             
             with tab_perf4:
