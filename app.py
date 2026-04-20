@@ -216,6 +216,7 @@ def calcular_projecao(vendedor, dias_uteis_trabalhados, dias_uteis_total):
     projecao_interacoes = interacoes_atual + (media_diaria_interacoes * dias_restantes)
     
     # Cálculo do percentual de meta
+    # Meta base: 100 faturas/mês (ajustável)
     meta_faturas = 100
     percentual_meta = (projecao_faturas / meta_faturas) * 100 if meta_faturas > 0 else 0
     
@@ -828,6 +829,7 @@ def exibir_projecao(vendedores, stats, periodo):
     
     st.markdown("---")
     
+    # Seletor de vendedor
     vendedor_selecionado = st.selectbox(
         "Selecione o vendedor para projeção:",
         [v['nome'] for v in vendedores]
@@ -838,6 +840,7 @@ def exibir_projecao(vendedores, stats, periodo):
     if vendedor:
         proj = calcular_projecao(vendedor, dias_uteis_trabalhados, dias_uteis_total)
         
+        # Cards de resultados atuais
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -875,6 +878,7 @@ def exibir_projecao(vendedores, stats, periodo):
         st.markdown("---")
         st.markdown("### 📊 PROJEÇÃO PARA FIM DO MÊS")
         
+        # Cards de projeção
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -906,6 +910,7 @@ def exibir_projecao(vendedores, stats, periodo):
         
         st.markdown("---")
         
+        # Métricas diárias
         col1, col2 = st.columns(2)
         
         with col1:
@@ -928,6 +933,7 @@ def exibir_projecao(vendedores, stats, periodo):
         
         st.markdown("---")
         
+        # Recomendação
         st.markdown(f"""
         <div class="info-box" style="border-left-color: {proj['cor']}">
         <strong>💡 RECOMENDAÇÃO:</strong><br>
@@ -936,6 +942,7 @@ def exibir_projecao(vendedores, stats, periodo):
         </div>
         """, unsafe_allow_html=True)
         
+        # Meta necessária
         if proj['percentual_meta'] < 100:
             faturas_faltando = 100 - proj['projecao_faturas']
             if faturas_faltando > 0:
@@ -996,6 +1003,7 @@ def exibir_feedback_star(vendedores, stats, periodo):
         
         st.markdown("---")
         
+        # Gerar feedback
         pontos_fortes = []
         pontos_melhorar = []
         
@@ -1269,7 +1277,7 @@ def dashboard_principal():
         analises = get_analises()
         
         if analises:
-            for a in analises[:5]:  # Mostrar apenas as 5 mais recentes
+            for a in analises[:5]:
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     st.markdown(f"**{a['periodo']}**")
@@ -1333,7 +1341,7 @@ def dashboard_principal():
     )
     
     # ============================================
-    # DASHBOARD DE BÔNUS (Apenas indicadores de bônus)
+    # DASHBOARD DE BÔNUS (ORIGINAL - NÃO ALTERAR)
     # ============================================
     if dashboard_tipo == "💰 Dashboard de Bônus":
         
@@ -1428,7 +1436,7 @@ def dashboard_principal():
             else:
                 st.info("📤 Envie os 5 prints para começar a análise")
         
-        # TAB 2: Dashboard de Bônus (Apenas indicadores de bônus)
+        # TAB 2: Dashboard de Bônus (ORIGINAL - APENAS INDICADORES DE BÔNUS)
         with tab2:
             if not st.session_state.get('analise_realizada', False):
                 st.warning("⚠️ Nenhuma análise carregada. Faça uma nova análise ou carregue do histórico na barra lateral.")
@@ -1440,7 +1448,7 @@ def dashboard_principal():
                 
                 st.markdown(f'<div class="periodo-box">📅 {periodo}</div>', unsafe_allow_html=True)
                 
-                # Cards principais de bônus
+                # Cards de bônus
                 col1, col2, col3, col4, col5 = st.columns(5)
                 
                 with col1:
@@ -1519,15 +1527,15 @@ def dashboard_principal():
                 st.markdown("---")
                 
                 # Tabela - APENAS indicadores de bônus
-                col_headers = st.columns([1.2, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7])
-                headers = ["Vendedor", "Margem%", "Alcance%", "Elegível", "Prazo", "Conversão%", "TME", "Bônus"]
+                col_headers = st.columns([1.2, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7])
+                headers = ["Vendedor", "Margem%", "Alcance%", "Elegível", "Prazo", "Conversão%", "TME", "Interações", "Bônus"]
                 for i, header in enumerate(headers):
                     col_headers[i].markdown(f"**{header}**")
                 
                 st.markdown("<hr>", unsafe_allow_html=True)
                 
                 for v in vendedores:
-                    cols = st.columns([1.2, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7])
+                    cols = st.columns([1.2, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7])
                     
                     cols[0].markdown(f"**{v['nome']}**")
                     
@@ -1550,7 +1558,9 @@ def dashboard_principal():
                     tme_class = "meta-ok" if v['tme_minutos'] <= 5 and v['tme_minutos'] > 0 else "meta-ruim"
                     cols[6].markdown(f'<span class="{tme_class}">{v["tme_minutos"]:.1f}m</span>' if v['tme_minutos'] > 0 else "N/D", unsafe_allow_html=True)
                     
-                    cols[7].markdown(f"**R$ {v['bonus_total']:,.0f}**")
+                    cols[7].markdown(f"{v['interacoes']:.0f}")
+                    
+                    cols[8].markdown(f"**R$ {v['bonus_total']:,.0f}**")
                 
                 st.markdown(f"""
                 <div style="background:#1a2a1a; border:1px solid #2d5a2d; border-radius:12px; padding:16px; text-align:center; margin-top:16px;">
@@ -1559,7 +1569,7 @@ def dashboard_principal():
                 </div>
                 """, unsafe_allow_html=True)
         
-        # TAB 3: Evolução (mantido)
+        # TAB 3: Evolução
         with tab3:
             st.markdown("### 📈 Evolução do Time")
             
@@ -1688,7 +1698,7 @@ def dashboard_principal():
                     st.rerun()
     
     # ============================================
-    # DASHBOARD DE PERFORMANCE (Todos os indicadores)
+    # DASHBOARD DE PERFORMANCE (COM TODOS OS INDICADORES)
     # ============================================
     else:
         if not st.session_state.get('analise_realizada', False):
@@ -1755,7 +1765,7 @@ def dashboard_principal():
                 
                 st.markdown("---")
                 
-                # Linha 2 - Indicadores de Performance
+                # Linha 2 - Indicadores de Performance (NOVOS)
                 st.markdown("#### 📊 Indicadores de Performance")
                 col1, col2, col3, col4 = st.columns(4)
                 
