@@ -545,6 +545,10 @@ def processar_dados_vendedores(dados_extraidos):
     
     return vendedores_processados
 
+# ============================================
+# FUNÇÃO EDIÇÃO MANUAL (CORRIGIDA)
+# ============================================
+
 def editar_dados_manual(vendedores):
     st.markdown("### ✏️ Edição Manual de Dados")
     st.markdown("Caso algum dado não tenha sido extraído corretamente, você pode ajustá-lo manualmente:")
@@ -563,6 +567,8 @@ def editar_dados_manual(vendedores):
                 
                 if tme_valor > 60:
                     tme_valor = 5.0
+                if tme_valor < 0:
+                    tme_valor = 0.0
                 
                 novo_margem = st.number_input("Margem (%)", 0.0, 100.0, margem_valor, 0.1, format="%.1f", key=f"margem_{i}")
                 novo_alcance = st.number_input("Alcance (%)", 0.0, 300.0, alcance_valor, 0.1, format="%.1f", key=f"alcance_{i}")
@@ -575,18 +581,35 @@ def editar_dados_manual(vendedores):
                 iniciados_valor = float(v['iniciados']) if isinstance(v['iniciados'], (int, float)) else 0.0
                 recebidos_valor = float(v['recebidos']) if isinstance(v['recebidos'], (int, float)) else 0.0
                 
-                # NOVOS CAMPOS - COM TRATAMENTO DE VALORES
                 meta_avista_valor = float(v.get('meta_venda_avista', 0)) if isinstance(v.get('meta_venda_avista', 0), (int, float)) else 0.0
+                if meta_avista_valor < 0:
+                    meta_avista_valor = 0.0
+                    
                 perc_meta_valor = float(v.get('percentual_meta', 0)) if isinstance(v.get('percentual_meta', 0), (int, float)) else 0.0
+                if perc_meta_valor > 100:
+                    perc_meta_valor = 100.0
+                if perc_meta_valor < 0:
+                    perc_meta_valor = 0.0
+                    
                 perc_avista_valor = float(v.get('percentual_venda_avista', 0)) if isinstance(v.get('percentual_venda_avista', 0), (int, float)) else 0.0
-                # CORREÇÃO: Garantir que desconto_valor não ultrapasse 100
+                if perc_avista_valor > 100:
+                    perc_avista_valor = 100.0
+                if perc_avista_valor < 0:
+                    perc_avista_valor = 0.0
+                    
                 desconto_valor = float(v.get('desconto', 0)) if isinstance(v.get('desconto', 0), (int, float)) else 0.0
                 if desconto_valor > 100:
                     desconto_valor = 100.0
                 if desconto_valor < 0:
                     desconto_valor = 0.0
+                    
                 desconto_qtd_valor = float(v.get('desconto_qtd', 0)) if isinstance(v.get('desconto_qtd', 0), (int, float)) else 0.0
+                if desconto_qtd_valor < 0:
+                    desconto_qtd_valor = 0.0
+                    
                 faturamento_valor = float(v.get('faturamento', 0)) if isinstance(v.get('faturamento', 0), (int, float)) else 0.0
+                if faturamento_valor < 0:
+                    faturamento_valor = 0.0
                 
                 novo_qtd = st.number_input("Qtd Faturadas", 0, 1000, int(qtd_valor), 1, key=f"qtd_{i}")
                 novo_chamadas = st.number_input("Chamadas", 0, 1000, int(chamadas_valor), 1, key=f"chamadas_{i}")
@@ -597,9 +620,10 @@ def editar_dados_manual(vendedores):
                 st.markdown("**📊 Novos Indicadores:**")
                 
                 novo_meta_avista = st.number_input("Meta Venda à Vista", 0.0, 1000000.0, meta_avista_valor, 100.0, format="%.0f", key=f"meta_avista_{i}")
-                novo_perc_meta = st.number_input("% Meta", 0.0, 100.0, perc_meta_valor, 0.1, format="%.1f", key=f"perc_meta_{i}")
-                novo_perc_avista = st.number_input("% Venda à Vista", 0.0, 100.0, perc_avista_valor, 0.1, format="%.1f", key=f"perc_avista_{i}")
-                # CORREÇÃO: Garantir que o valor padrão não ultrapasse o max_value
+                valor_perc_meta = min(perc_meta_valor, 100.0)
+                novo_perc_meta = st.number_input("% Meta", 0.0, 100.0, valor_perc_meta, 0.1, format="%.1f", key=f"perc_meta_{i}")
+                valor_perc_avista = min(perc_avista_valor, 100.0)
+                novo_perc_avista = st.number_input("% Venda à Vista", 0.0, 100.0, valor_perc_avista, 0.1, format="%.1f", key=f"perc_avista_{i}")
                 valor_desconto = desconto_valor if desconto_valor <= 100 else 0.0
                 novo_desconto = st.number_input("Desconto (%)", 0.0, 100.0, valor_desconto, 0.1, format="%.1f", key=f"desconto_{i}")
                 novo_desconto_qtd = st.number_input("Qtd Desconto", 0, 1000, int(desconto_qtd_valor), 1, key=f"desconto_qtd_{i}")
@@ -1341,7 +1365,7 @@ def dashboard_principal():
     )
     
     # ============================================
-    # DASHBOARD DE BÔNUS (ORIGINAL - NÃO ALTERAR)
+    # DASHBOARD DE BÔNUS
     # ============================================
     if dashboard_tipo == "💰 Dashboard de Bônus":
         
@@ -1436,7 +1460,7 @@ def dashboard_principal():
             else:
                 st.info("📤 Envie os 5 prints para começar a análise")
         
-        # TAB 2: Dashboard de Bônus (ORIGINAL - APENAS INDICADORES DE BÔNUS)
+        # TAB 2: Dashboard
         with tab2:
             if not st.session_state.get('analise_realizada', False):
                 st.warning("⚠️ Nenhuma análise carregada. Faça uma nova análise ou carregue do histórico na barra lateral.")
@@ -1448,7 +1472,6 @@ def dashboard_principal():
                 
                 st.markdown(f'<div class="periodo-box">📅 {periodo}</div>', unsafe_allow_html=True)
                 
-                # Cards de bônus
                 col1, col2, col3, col4, col5 = st.columns(5)
                 
                 with col1:
@@ -1499,9 +1522,8 @@ def dashboard_principal():
                     """, unsafe_allow_html=True)
                 
                 st.markdown("---")
-                st.markdown("### 📊 Resultados por Vendedor (Indicadores de Bônus)")
+                st.markdown("### 📊 Resultados por Vendedor")
                 
-                # Gráfico de bônus
                 df_plot = pd.DataFrame(vendedores)
                 df_plot = df_plot.sort_values('bonus_total', ascending=False)
                 
@@ -1526,7 +1548,6 @@ def dashboard_principal():
                 
                 st.markdown("---")
                 
-                # Tabela - APENAS indicadores de bônus
                 col_headers = st.columns([1.2, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7])
                 headers = ["Vendedor", "Margem%", "Alcance%", "Elegível", "Prazo", "Conversão%", "TME", "Interações", "Bônus"]
                 for i, header in enumerate(headers):
@@ -1698,7 +1719,7 @@ def dashboard_principal():
                     st.rerun()
     
     # ============================================
-    # DASHBOARD DE PERFORMANCE (COM TODOS OS INDICADORES)
+    # DASHBOARD DE PERFORMANCE
     # ============================================
     else:
         if not st.session_state.get('analise_realizada', False):
@@ -1717,7 +1738,7 @@ def dashboard_principal():
                 "📊 5. Projeção"
             ])
             
-            # TAB 1: Visão Geral (Todos os indicadores)
+            # TAB 1: Visão Geral
             with tab_perf1:
                 st.markdown(f'<div class="periodo-box">📅 {periodo}</div>', unsafe_allow_html=True)
                 st.markdown("### 📊 Visão Geral da Performance do Time")
@@ -1765,7 +1786,7 @@ def dashboard_principal():
                 
                 st.markdown("---")
                 
-                # Linha 2 - Indicadores de Performance (NOVOS)
+                # Linha 2 - Indicadores de Performance
                 st.markdown("#### 📊 Indicadores de Performance")
                 col1, col2, col3, col4 = st.columns(4)
                 
@@ -1897,7 +1918,7 @@ def dashboard_principal():
                 fig.update_layout(polar=dict(radialaxis=dict(range=[0,100])), height=500, plot_bgcolor='#0d1117', paper_bgcolor='#0d1117')
                 st.plotly_chart(fig, use_container_width=True)
             
-            # TAB 2: Indicadores (Todos os indicadores)
+            # TAB 2: Indicadores
             with tab_perf2:
                 st.markdown("### 📈 Indicadores por Vendedor")
                 
