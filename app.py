@@ -1,6 +1,7 @@
 """
 DASHBOARD DE VENDAS - ANALISADOR DE PRINTS COM IA
 Sistema completo com projeções e salvamento de dados
+COM PERSISTÊNCIA DA ÚLTIMA ANÁLISE
 """
 
 import subprocess, sys, os, hashlib, sqlite3, json, re
@@ -66,7 +67,6 @@ def init_database():
     cursor = conn.cursor()
     
     # Tabela de análises
-    cursor.execute('DROP TABLE IF EXISTS analises')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS analises (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,6 +84,16 @@ def init_database():
             nome_arquivo TEXT NOT NULL,
             dados_json TEXT NOT NULL,
             data_salvamento TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Tabela para armazenar a última análise ativa
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ultima_analise (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            analise_id INTEGER NOT NULL,
+            data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (analise_id) REFERENCES analises(id) ON DELETE CASCADE
         )
     ''')
     
@@ -128,6 +138,11 @@ def deletar_analise(analise_id):
     cursor.execute("DELETE FROM analises WHERE id = ?", (analise_id,))
     conn.commit()
     conn.close()
+    
+    # Se a análise deletada era a última ativa, limpar referência
+    ultima = carregar_ultima_analise()
+    if ultima and ultima['id'] == analise_id:
+        limpar_ultima_analise()
 
 def carregar_analise_por_id(analise_id):
     conn = get_connection()
@@ -148,6 +163,50 @@ def carregar_analise_por_id(analise_id):
             'total_bonus': analise[4]
         }
     return None
+
+# ============================================
+# FUNÇÕES PARA GERENCIAR A ÚLTIMA ANÁLISE ATIVA
+# ============================================
+
+def salvar_ultima_analise(analise_id):
+    """Salva o ID da análise que deve ser carregada automaticamente na próxima execução"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Usa INSERT OR REPLACE para manter apenas um registro (id = 1)
+    cursor.execute('''
+        INSERT OR REPLACE INTO ultima_analise (id, analise_id, data_atualizacao)
+        VALUES (1, ?, CURRENT_TIMESTAMP)
+    ''', (analise_id,))
+    conn.commit()
+    conn.close()
+
+def carregar_ultima_analise():
+    """Retorna a última análise ativa salva, ou None"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT analise_id FROM ultima_analise WHERE id = 1
+    ''')
+    resultado = cursor.fetchone()
+    conn.close()
+    if resultado:
+        analise_id = resultado[0]
+        return carregar_analise_por_id(analise_id)
+    return None
+
+def limpar_ultima_analise():
+    """Remove a referência à última análise (usado quando a análise é deletada)"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM ultima_analise WHERE id = 1')
+    conn.commit()
+    conn.close()
+
+def atualizar_ultima_analise_se_necessario(analise_id):
+    """Atualiza a última análise apenas se não for a mesma já salva, para evitar escrita desnecessária"""
+    atual = carregar_ultima_analise()
+    if not atual or atual['id'] != analise_id:
+        salvar_ultima_analise(analise_id)
 
 # ============================================
 # FUNÇÕES PARA SALVAR/CARREGAR DADOS DOS PRINTS
@@ -698,11 +757,14 @@ def exibir_historico_e_carregar():
             if analise:
                 dados = desserializar_analise(analise['dados_json'])
                 st.session_state['analise_atual'] = {
+                    'id': analise['id'],
                     'periodo': analise['periodo'],
                     'vendedores': dados['vendedores'],
                     'total_bonus': analise['total_bonus']
                 }
                 st.session_state['analise_realizada'] = True
+                # Salva como última análise ativa
+                salvar_ultima_analise(analise['id'])
                 st.success(f"✅ Análise carregada: {analise['periodo']}")
                 st.rerun()
     
@@ -1273,16 +1335,26 @@ def tela_login():
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================
-# FUNÇÃO PARA SALVAR ANÁLISE ATUAL NO HISTÓRICO
+# FUNÇÃO PARA SALVAR ANÁLISE ATUAL NO HISTÓRICO E COMO ÚLTIMA
 # ============================================
 
 def salvar_analise_atual():
     if st.session_state.get('analise_realizada', False):
         analise = st.session_state.get('analise_atual', {})
         if analise and analise.get('vendedores'):
-            dados_json = serializar_analise(analise['vendedores'], analise['periodo'])
-            salvar_analise(analise['periodo'], dados_json, analise['total_bonus'])
-            st.success("✅ Análise salva no histórico!")
+            # Se já existe um ID (análise carregada do histórico), apenas atualizamos a última análise
+            if 'id' in analise and analise['id']:
+                # Já existe no banco, apenas atualizar a referência de última análise
+                salvar_ultima_analise(analise['id'])
+                st.success("✅ Análise definida como ativa!")
+            else:
+                # Nova análise, precisa salvar no histórico
+                dados_json = serializar_analise(analise['vendedores'], analise['periodo'])
+                novo_id = salvar_analise(analise['periodo'], dados_json, analise['total_bonus'])
+                # Atualiza o session_state com o ID
+                st.session_state['analise_atual']['id'] = novo_id
+                salvar_ultima_analise(novo_id)
+                st.success("✅ Análise salva no histórico e definida como ativa!")
             st.rerun()
 
 # ============================================
@@ -1291,6 +1363,20 @@ def salvar_analise_atual():
 
 def dashboard_principal():
     global DATA_ATUALIZACAO
+    
+    # Tentar carregar a última análise ativa se ainda não houver análise no session_state
+    if not st.session_state.get('analise_realizada', False):
+        ultima = carregar_ultima_analise()
+        if ultima:
+            dados = desserializar_analise(ultima['dados_json'])
+            st.session_state['analise_atual'] = {
+                'id': ultima['id'],
+                'periodo': ultima['periodo'],
+                'vendedores': dados['vendedores'],
+                'total_bonus': ultima['total_bonus']
+            }
+            st.session_state['analise_realizada'] = True
+            # Não precisa salvar novamente a última, já está salva
     
     with st.sidebar:
         st.markdown(f"### 👤 {st.session_state.get('usuario', 'Usuário')}")
@@ -1322,7 +1408,7 @@ def dashboard_principal():
         st.markdown("### 💾 Ações")
         
         if st.session_state.get('analise_realizada', False):
-            if st.button("💾 Salvar Análise Atual", use_container_width=True):
+            if st.button("💾 Salvar/Atualizar Análise Atual", use_container_width=True):
                 salvar_analise_atual()
         
         st.markdown("---")
@@ -1436,14 +1522,17 @@ def dashboard_principal():
                             total_bonus = sum(v['bonus_total'] for v in vendedores)
                             
                             dados_json = serializar_analise(vendedores, periodo_input)
-                            salvar_analise(periodo_input, dados_json, total_bonus)
+                            analise_id = salvar_analise(periodo_input, dados_json, total_bonus)
                             
                             st.session_state['analise_atual'] = {
+                                'id': analise_id,
                                 'periodo': periodo_input,
                                 'vendedores': vendedores,
                                 'total_bonus': total_bonus
                             }
                             st.session_state['analise_realizada'] = True
+                            # Salva como última análise ativa
+                            salvar_ultima_analise(analise_id)
                             
                             st.success("✅ Análise concluída e salva no histórico!")
                             
@@ -1642,13 +1731,32 @@ def dashboard_principal():
                     if st.button("💾 Salvar alterações e atualizar", type="primary", use_container_width=True):
                         dados_json = serializar_analise(vendedores_editados, periodo)
                         total_bonus = sum(v['bonus_total'] for v in vendedores_editados)
-                        salvar_analise(periodo, dados_json, total_bonus)
                         
-                        st.session_state['analise_atual'] = {
-                            'periodo': periodo,
-                            'vendedores': vendedores_editados,
-                            'total_bonus': total_bonus
-                        }
+                        # Se já tem ID, atualiza o registro no banco (deleta o antigo e insere novo, ou simplesmente insere novo e deleta o antigo? Vamos optar por deletar o antigo e inserir novo para manter integridade)
+                        if 'id' in analise and analise['id']:
+                            # Deleta a análise antiga
+                            deletar_analise(analise['id'])
+                            # Cria nova
+                            novo_id = salvar_analise(periodo, dados_json, total_bonus)
+                            # Atualiza session_state
+                            st.session_state['analise_atual'] = {
+                                'id': novo_id,
+                                'periodo': periodo,
+                                'vendedores': vendedores_editados,
+                                'total_bonus': total_bonus
+                            }
+                            salvar_ultima_analise(novo_id)
+                        else:
+                            # Caso não tenha ID (improvável, mas seguro)
+                            novo_id = salvar_analise(periodo, dados_json, total_bonus)
+                            st.session_state['analise_atual'] = {
+                                'id': novo_id,
+                                'periodo': periodo,
+                                'vendedores': vendedores_editados,
+                                'total_bonus': total_bonus
+                            }
+                            salvar_ultima_analise(novo_id)
+                        
                         st.success("✅ Alterações salvas com sucesso!")
                         st.rerun()
                 with col2:
