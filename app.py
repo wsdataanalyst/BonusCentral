@@ -1,7 +1,7 @@
 """
 DASHBOARD DE VENDAS - ANALISADOR DE PRINTS COM IA
 Sistema completo com projeções, salvamento de dados, exportação de feedback STAR para PDF
-e simulador de metas mensais
+e simulador de metas mensais - COM SUPORTE A MÚLTIPLAS CHAVES GEMINI (FALLBACK MANUAL)
 """
 
 import sys, os, sqlite3, json, re
@@ -21,22 +21,46 @@ from fpdf import FPDF
 load_dotenv()
 
 # ============================================
-# CONFIGURAÇÃO DA API GEMINI
+# CONFIGURAÇÃO DA API GEMINI (MÚLTIPLAS CHAVES COM FALLBACK MANUAL)
 # ============================================
 
-api_key = None
+def obter_lista_chaves():
+    """Retorna lista de chaves a partir de GEMINI_API_KEYS (vírgula) ou GOOGLE_API_KEY (única)."""
+    chaves_str = None
+    try:
+        if hasattr(st, 'secrets') and 'GEMINI_API_KEYS' in st.secrets:
+            chaves_str = st.secrets['GEMINI_API_KEYS']
+    except:
+        pass
+    if not chaves_str:
+        chaves_str = os.getenv("GEMINI_API_KEYS")
+    if not chaves_str:
+        chaves_str = os.getenv("GOOGLE_API_KEY", "")
+    if not chaves_str:
+        return []
+    if ',' in chaves_str:
+        return [k.strip() for k in chaves_str.split(',') if k.strip()]
+    else:
+        return [chaves_str]
 
-try:
-    if hasattr(st, 'secrets') and 'GOOGLE_API_KEY' in st.secrets:
-        api_key = st.secrets['GOOGLE_API_KEY']
-except:
-    pass
+CHAVES_API = obter_lista_chaves()
 
-if not api_key:
-    api_key = os.getenv("GOOGLE_API_KEY")
-
-if api_key:
-    genai.configure(api_key=api_key)
+def get_modelo_disponivel():
+    """Tenta obter um modelo Gemini usando a primeira chave disponível. Se falhar, tenta as próximas."""
+    ultimo_erro = None
+    for chave in CHAVES_API:
+        try:
+            genai.configure(api_key=chave)
+            modelos = list(genai.list_models())
+            for modelo in modelos:
+                if 'generateContent' in modelo.supported_generation_methods:
+                    return genai.GenerativeModel(modelo.name)
+        except Exception as e:
+            ultimo_erro = e
+            continue
+    if ultimo_erro:
+        st.error(f"Erro ao conectar com Gemini (todas as chaves falharam): {ultimo_erro}")
+    return None
 
 # ============================================
 # CREDENCIAIS DO USUÁRIO
@@ -394,14 +418,24 @@ def padronizar_nome(nome):
 # ============================================
 
 def get_modelo_disponivel():
-    try:
-        modelos = list(genai.list_models())
-        for modelo in modelos:
-            if 'generateContent' in modelo.supported_generation_methods:
-                return genai.GenerativeModel(modelo.name)
-    except Exception as e:
-        st.error(f"Erro ao conectar com Gemini: {e}")
-        return None
+    """Tenta obter modelo Gemini com fallback entre chaves"""
+    return _get_modelo_com_fallback()
+
+def _get_modelo_com_fallback():
+    """Implementação interna do fallback entre chaves"""
+    ultimo_erro = None
+    for chave in CHAVES_API:
+        try:
+            genai.configure(api_key=chave)
+            modelos = list(genai.list_models())
+            for modelo in modelos:
+                if 'generateContent' in modelo.supported_generation_methods:
+                    return genai.GenerativeModel(modelo.name)
+        except Exception as e:
+            ultimo_erro = e
+            continue
+    if ultimo_erro:
+        st.error(f"Erro ao conectar com Gemini: {ultimo_erro}")
     return None
 
 def calcular_bonus(vendedor):
@@ -1816,8 +1850,8 @@ def dashboard_principal():
                     periodo_input = st.text_input("📅 Período (ex: Abril 2024)", value=datetime.now().strftime("%B %Y"))
                 
                 if st.button("🚀 Analisar Prints com IA", type="primary", use_container_width=True):
-                    if not api_key:
-                        st.error("❌ Configure a chave API do Google Gemini no arquivo .env ou Secrets")
+                    if not CHAVES_API:
+                        st.error("❌ Configure a(s) chave(s) API do Google Gemini no arquivo .env ou Secrets")
                         st.stop()
                     
                     with st.spinner("🔄 Analisando os prints..."):
