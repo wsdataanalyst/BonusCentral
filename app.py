@@ -1,31 +1,21 @@
 """
 DASHBOARD DE VENDAS - ANALISADOR DE PRINTS COM IA
-Sistema completo com projeções, salvamento de dados e exportação de feedback STAR para PDF
+Sistema completo com projeções, salvamento de dados, exportação de feedback STAR para PDF
+e simulador de metas mensais
 """
 
-import subprocess, sys, os, hashlib, sqlite3, json, re
+import sys, os, sqlite3, json, re
 from datetime import datetime
 from io import BytesIO
 
-# Instala bibliotecas automaticamente se não tiver
-try:
-    import streamlit as st
-    import pandas as pd
-    import plotly.graph_objects as go
-    import google.generativeai as genai
-    import PIL.Image
-    from dotenv import load_dotenv
-    from fpdf import FPDF
-except ModuleNotFoundError as e:
-    print(f"Instalando bibliotecas... {e}")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "streamlit", "pandas", "plotly", "google-generativeai", "Pillow", "python-dotenv", "fpdf2"])
-    import streamlit as st
-    import pandas as pd
-    import plotly.graph_objects as go
-    import google.generativeai as genai
-    import PIL.Image
-    from dotenv import load_dotenv
-    from fpdf import FPDF
+# Importações diretas (sem instalação automática)
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+import google.generativeai as genai
+import PIL.Image
+from dotenv import load_dotenv
+from fpdf import FPDF
 
 # Carrega variáveis de ambiente
 load_dotenv()
@@ -725,11 +715,11 @@ def editar_dados_manual(vendedores):
     return vendedores_editados
 
 # ============================================
-# FUNÇÃO PARA GERAR PDF DO FEEDBACK STAR (CORRIGIDA - SEM CARACTERES ESPECIAIS)
+# FUNÇÃO PARA GERAR PDF DO FEEDBACK STAR (COM ASSINATURAS E DATA)
 # ============================================
 
 def gerar_pdf_feedback(vendedor, feedback_texto, periodo):
-    """Gera um PDF com o feedback STAR formatado (compatível com ASCII)"""
+    """Gera um PDF com o feedback STAR formatado (compatível com ASCII) com linhas de assinatura"""
     pdf = FPDF()
     pdf.add_page()
     
@@ -738,6 +728,8 @@ def gerar_pdf_feedback(vendedor, feedback_texto, periodo):
     pdf.cell(0, 10, f"Feedback STAR - {vendedor['nome']}", ln=True, align="C")
     pdf.set_font("Arial", "I", 10)
     pdf.cell(0, 6, f"Periodo: {periodo}", ln=True, align="C")
+    data_feedback = datetime.now().strftime('%d/%m/%Y')
+    pdf.cell(0, 6, f"Data do Feedback: {data_feedback}", ln=True, align="C")
     pdf.ln(10)
     
     # Dados do vendedor em tabela simples
@@ -757,6 +749,7 @@ def gerar_pdf_feedback(vendedor, feedback_texto, periodo):
         f"Interacoes: {vendedor['interacoes']:.0f} (Meta: >=200)",
         f"Bonus Total: R$ {vendedor['bonus_total']:,.2f}",
         f"Faturamento: R$ {vendedor.get('faturamento', 0):,.2f}",
+        f"Meta Faturamento: R$ {vendedor.get('meta_venda_avista', 0):,.2f}",
         f"% Meta: {vendedor.get('percentual_meta', 0):.1f}%",
         f"% Venda a Vista: {vendedor.get('percentual_venda_avista', 0):.1f}%",
         f"Desconto Medio: {vendedor.get('desconto', 0):.1f}%"
@@ -778,6 +771,20 @@ def gerar_pdf_feedback(vendedor, feedback_texto, periodo):
     
     # Quebrar em linhas para caber na página
     pdf.multi_cell(0, 6, texto_limpo)
+    
+    # Linhas de assinatura
+    pdf.ln(12)
+    pdf.set_font("Arial", "", 10)
+    
+    # Linha para assinatura do Gestor
+    pdf.cell(0, 10, "_________________________________________", ln=True, align="C")
+    pdf.cell(0, 6, "Assinatura do Gestor", ln=True, align="C")
+    
+    pdf.ln(6)
+    
+    # Linha para assinatura do Coordenador
+    pdf.cell(0, 10, "_________________________________________", ln=True, align="C")
+    pdf.cell(0, 6, "Assinatura do Coordenador", ln=True, align="C")
     
     # Rodapé
     pdf.ln(6)
@@ -1145,11 +1152,11 @@ def exibir_feedback_star(vendedores, stats, periodo):
             <div class="card-metrica">
                 <div class="indicador-titulo">📊 NOVOS INDICADORES</div>
                 <div>💰 Faturamento: <b>R$ {vendedor.get('faturamento', 0):,.2f}</b></div>
+                <div>🎯 Meta Faturamento: <b>R$ {vendedor.get('meta_venda_avista', 0):,.2f}</b></div>
                 <div>🎯 % Meta: <b>{vendedor.get('percentual_meta', 0):.1f}%</b></div>
                 <div>📈 % Venda à Vista: <b>{vendedor.get('percentual_venda_avista', 0):.1f}%</b></div>
                 <div>💸 Desconto: <b>{vendedor.get('desconto', 0):.1f}%</b></div>
                 <div>🔢 Qtd Desconto: <b>{vendedor.get('desconto_qtd', 0):.0f}</b></div>
-                <div>📊 Meta Venda à Vista: <b>{vendedor.get('meta_venda_avista', 0):,.0f}</b></div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -1222,6 +1229,7 @@ def exibir_feedback_star(vendedores, stats, periodo):
                         - Interações: {vendedor['interacoes']:.0f} (Meta: ≥200)
                         - Bônus: R$ {vendedor['bonus_total']:,.0f}
                         - Faturamento: R$ {vendedor.get('faturamento', 0):,.2f}
+                        - Meta Faturamento: R$ {vendedor.get('meta_venda_avista', 0):,.2f}
                         - % Meta: {vendedor.get('percentual_meta', 0):.1f}%
                         - % Venda à Vista: {vendedor.get('percentual_venda_avista', 0):.1f}%
                         - Desconto: {vendedor.get('desconto', 0):.1f}%
@@ -1256,6 +1264,224 @@ def exibir_feedback_star(vendedores, stats, periodo):
                             )
                 except Exception as e:
                     st.error(f"Erro ao gerar feedback: {e}")
+
+# ============================================
+# FUNÇÃO SIMULADOR DE METAS MENSAIS (NOVA ABA)
+# ============================================
+
+def exibir_simulador_metas(vendedores, stats, periodo):
+    st.markdown("### 🎯 Simulador de Metas Mensais")
+    st.markdown("""
+    <div class="info-box">
+    📊 <strong>Simulador de Planejamento de Metas</strong><br>
+    Esta ferramenta ajuda a projetar as metas do mês com base no faturamento desejado,
+    dias úteis, ticket médio e taxa de conversão esperada.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        meta_faturamento = st.number_input("💰 Meta de Faturamento do Mês (R$)", min_value=0.0, value=100000.0, step=10000.0, format="%.2f")
+        dias_uteis = st.number_input("📅 Dias Úteis no Mês", min_value=1, max_value=30, value=22)
+    
+    with col2:
+        # Opção de usar ticket médio histórico ou informar manualmente
+        usar_ticket_historico = st.checkbox("Usar ticket médio histórico da análise", value=True)
+        if usar_ticket_historico and stats.get('total_faturas', 0) > 0:
+            ticket_medio_historico = stats['total_faturamento'] / stats['total_faturas'] if stats['total_faturas'] > 0 else 0
+            ticket_medio = ticket_medio_historico
+            st.info(f"Ticket médio histórico do time: R$ {ticket_medio:,.2f}")
+        else:
+            ticket_medio = st.number_input("🎫 Ticket Médio Estimado (R$)", min_value=0.0, value=5000.0, step=500.0, format="%.2f")
+        
+        # Opção de usar conversão histórica ou informar manualmente
+        usar_conversao_historica = st.checkbox("Usar taxa de conversão histórica", value=True)
+        if usar_conversao_historica and stats.get('media_conversao', 0) > 0:
+            conversao_media = stats['media_conversao']
+            st.info(f"Taxa de conversão média do time: {conversao_media:.1f}%")
+        else:
+            conversao_media = st.number_input("🔄 Taxa de Conversão Esperada (%)", min_value=0.0, max_value=100.0, value=12.0, step=1.0, format="%.1f")
+    
+    st.markdown("---")
+    
+    if meta_faturamento > 0 and dias_uteis > 0 and ticket_medio > 0:
+        # Cálculos principais
+        nfs_necessarias = meta_faturamento / ticket_medio
+        nfs_por_dia = nfs_necessarias / dias_uteis
+        
+        if conversao_media > 0:
+            interacoes_necessarias = (nfs_necessarias / (conversao_media / 100))
+            interacoes_por_dia = interacoes_necessarias / dias_uteis
+        else:
+            interacoes_necessarias = 0
+            interacoes_por_dia = 0
+        
+        st.markdown("### 📈 Resultados da Simulação")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="card-metrica">
+                <div class="indicador-titulo">📦 NFs NECESSÁRIAS</div>
+                <div class="valor-grande">{nfs_necessarias:.0f}</div>
+                <div class="indicador-meta">Total no mês</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="card-metrica">
+                <div class="indicador-titulo">📊 NFs POR DIA</div>
+                <div class="valor-medio">{nfs_por_dia:.1f}</div>
+                <div class="indicador-meta">Média diária</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="card-metrica">
+                <div class="indicador-titulo">💬 INTERAÇÕES NECESSÁRIAS</div>
+                <div class="valor-grande">{interacoes_necessarias:.0f}</div>
+                <div class="indicador-meta">Total no mês</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown(f"""
+            <div class="card-metrica">
+                <div class="indicador-titulo">📞 INTERAÇÕES POR DIA</div>
+                <div class="valor-medio">{interacoes_por_dia:.0f}</div>
+                <div class="indicador-meta">Média diária</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Comparação com desempenho atual do time
+        if stats.get('total_faturas', 0) > 0:
+            st.markdown("### 📊 Comparação com o Desempenho Atual do Time")
+            
+            desempenho_atual = {
+                'faturamento': stats['total_faturamento'],
+                'nfs': stats['total_faturas'],
+                'nfs_dia': stats['total_faturas'] / dias_uteis if dias_uteis > 0 else 0,
+                'interacoes': stats['total_interacoes'],
+                'interacoes_dia': stats['total_interacoes'] / dias_uteis if dias_uteis > 0 else 0,
+                'conversao': stats['media_conversao']
+            }
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Metas Projetadas vs. Atual**")
+                df_compare = pd.DataFrame({
+                    'Métrica': ['Faturamento (R$)', 'Quantidade de NFs', 'Interações', 'Conversão (%)'],
+                    'Meta Projetada': [f"R$ {meta_faturamento:,.2f}", f"{nfs_necessarias:.0f}", f"{interacoes_necessarias:.0f}", f"{conversao_media:.1f}%"],
+                    'Desempenho Atual': [f"R$ {desempenho_atual['faturamento']:,.2f}", f"{desempenho_atual['nfs']:.0f}", f"{desempenho_atual['interacoes']:.0f}", f"{desempenho_atual['conversao']:.1f}%"]
+                })
+                st.dataframe(df_compare, use_container_width=True, hide_index=True)
+            
+            with col2:
+                # Diferença percentual
+                perc_fat = (meta_faturamento / desempenho_atual['faturamento'] - 1) * 100 if desempenho_atual['faturamento'] > 0 else 0
+                perc_nfs = (nfs_necessarias / desempenho_atual['nfs'] - 1) * 100 if desempenho_atual['nfs'] > 0 else 0
+                
+                st.markdown("**Necessidade de Crescimento**")
+                st.metric("Faturamento", f"R$ {meta_faturamento:,.2f}", delta=f"{perc_fat:+.1f}%" if perc_fat != 0 else "igual")
+                st.metric("Quantidade de NFs", f"{nfs_necessarias:.0f}", delta=f"{perc_nfs:+.1f}%" if perc_nfs != 0 else "igual")
+        
+        st.markdown("---")
+        
+        # Gráfico de metas diárias
+        st.markdown("### 📈 Metas Diárias Projetadas")
+        
+        dias = list(range(1, dias_uteis + 1))
+        nfs_acumuladas = [nfs_por_dia * i for i in range(1, dias_uteis + 1)]
+        interacoes_acumuladas = [interacoes_por_dia * i for i in range(1, dias_uteis + 1)]
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=dias, y=nfs_acumuladas, mode='lines+markers', name='NFs Acumuladas', line=dict(color='#00e676', width=2)))
+        fig.add_trace(go.Scatter(x=dias, y=interacoes_acumuladas, mode='lines+markers', name='Interações Acumuladas', line=dict(color='#ffab00', width=2)))
+        fig.update_layout(title="Acumulado de Metas ao Longo do Mês", xaxis_title="Dia Útil", yaxis_title="Quantidade", plot_bgcolor='#0d1117', paper_bgcolor='#0d1117', height=400)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Recomendações
+        st.markdown("---")
+        st.markdown("### 💡 Recomendações Estratégicas")
+        
+        recomendacoes = []
+        
+        if nfs_por_dia > 5:
+            recomendacoes.append("📌 A meta diária de NFs está alta (acima de 5). Considere revisar o ticket médio ou o prazo.")
+        elif nfs_por_dia < 2:
+            recomendacoes.append("✅ A meta diária de NFs está confortável. Mantenha o ritmo.")
+        else:
+            recomendacoes.append("📊 A meta diária de NFs está dentro do esperado. Foco na consistência.")
+        
+        if interacoes_por_dia > 50:
+            recomendacoes.append("⚠️ A necessidade diária de interações é alta (acima de 50). Invista em estratégias de prospecção.")
+        elif interacoes_por_dia < 20:
+            recomendacoes.append("✅ A necessidade de interações está baixa. Mantenha a qualidade dos contatos.")
+        else:
+            recomendacoes.append("📞 Nível de interações diárias adequado. Continue acompanhando.")
+        
+        if conversao_media < 10:
+            recomendacoes.append("🎯 Taxa de conversão baixa. Treinamento em técnicas de fechamento pode ajudar.")
+        elif conversao_media > 20:
+            recomendacoes.append("🏆 Excelente taxa de conversão! Foco em aumentar o volume de interações.")
+        
+        for rec in recomendacoes:
+            st.info(rec)
+        
+        # Botão para exportar simulação
+        st.markdown("---")
+        if st.button("📄 Exportar Simulação", type="primary"):
+            # Criar PDF da simulação
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", "B", 16)
+            pdf.cell(0, 10, "Simulador de Metas Mensais", ln=True, align="C")
+            pdf.set_font("Arial", "I", 10)
+            pdf.cell(0, 6, f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align="C")
+            pdf.ln(10)
+            
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 8, "Parametros de Entrada:", ln=True)
+            pdf.set_font("Arial", "", 10)
+            pdf.cell(0, 6, f"Meta de Faturamento: R$ {meta_faturamento:,.2f}", ln=True)
+            pdf.cell(0, 6, f"Dias Uteis: {dias_uteis}", ln=True)
+            pdf.cell(0, 6, f"Ticket Medio: R$ {ticket_medio:,.2f}", ln=True)
+            pdf.cell(0, 6, f"Taxa de Conversao: {conversao_media:.1f}%", ln=True)
+            
+            pdf.ln(6)
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 8, "Resultados:", ln=True)
+            pdf.set_font("Arial", "", 10)
+            pdf.cell(0, 6, f"NFs Necessarias: {nfs_necessarias:.0f}", ln=True)
+            pdf.cell(0, 6, f"NFs por Dia: {nfs_por_dia:.1f}", ln=True)
+            pdf.cell(0, 6, f"Interacoes Necessarias: {interacoes_necessarias:.0f}", ln=True)
+            pdf.cell(0, 6, f"Interacoes por Dia: {interacoes_por_dia:.0f}", ln=True)
+            
+            pdf.ln(6)
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 8, "Recomendacoes:", ln=True)
+            pdf.set_font("Arial", "", 10)
+            for rec in recomendacoes:
+                pdf.cell(0, 6, rec, ln=True)
+            
+            output = BytesIO()
+            pdf.output(output)
+            output.seek(0)
+            
+            st.download_button(
+                label="📥 Baixar Simulação em PDF",
+                data=output,
+                file_name=f"Simulador_Metas_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
 
 # ============================================
 # CSS PERSONALIZADO
@@ -1904,7 +2130,7 @@ def dashboard_principal():
                     st.rerun()
     
     # ============================================
-    # DASHBOARD DE PERFORMANCE
+    # DASHBOARD DE PERFORMANCE (COM NOVA ABA DE SIMULADOR)
     # ============================================
     else:
         if not st.session_state.get('analise_realizada', False):
@@ -1915,12 +2141,13 @@ def dashboard_principal():
             periodo = analise.get('periodo', 'Período atual')
             stats = calcular_estatisticas_time(vendedores)
             
-            tab_perf1, tab_perf2, tab_perf3, tab_perf4, tab_perf5 = st.tabs([
+            tab_perf1, tab_perf2, tab_perf3, tab_perf4, tab_perf5, tab_perf6 = st.tabs([
                 "📊 1. Visão Geral",
                 "📈 2. Indicadores",
                 "🏢 3. Agente Performance",
                 "🎯 4. Feedback STAR",
-                "📊 5. Projeção"
+                "📊 5. Projeção",
+                "🎯 6. Simulador de Metas"
             ])
             
             # TAB 1: Visão Geral
@@ -2192,6 +2419,10 @@ def dashboard_principal():
             # TAB 5: Projeção
             with tab_perf5:
                 exibir_projecao(vendedores, stats, periodo)
+            
+            # TAB 6: Simulador de Metas Mensais (NOVA)
+            with tab_perf6:
+                exibir_simulador_metas(vendedores, stats, periodo)
 
 # ============================================
 # MAIN
